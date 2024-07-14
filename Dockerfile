@@ -1,10 +1,23 @@
-FROM richarvey/nginx-php-fpm:3.1.6
+# Stage 1: Build the assets
+FROM node:16 AS build
 
-# Install dependencies for Node.js
-RUN apt-get update && \
-    apt-get install -y curl gnupg2 && \
-    curl -sL https://deb.nodesource.com/setup_16.x | bash - && \
-    apt-get install -y nodejs
+# Set working directory
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install Node.js dependencies
+RUN npm install
+
+# Copy the rest of the application files
+COPY . .
+
+# Build assets using Vite
+RUN npm run build
+
+# Stage 2: Serve the application
+FROM richarvey/nginx-php-fpm:3.1.6
 
 # Set working directory
 WORKDIR /var/www/html
@@ -12,17 +25,11 @@ WORKDIR /var/www/html
 # Copy the application files
 COPY . .
 
+# Copy the built assets from the build stage
+COPY --from=build /app/public/build /var/www/html/public/build
+
 # Install PHP dependencies
 RUN php composer.phar install --no-dev --optimize-autoloader --no-interaction --prefer-dist
-
-# Install Node.js dependencies
-RUN npm install
-
-# Build assets using Vite
-RUN npm run build
-
-# Remove development dependencies
-RUN npm prune --production
 
 # Set environment variables
 ENV SKIP_COMPOSER 1
