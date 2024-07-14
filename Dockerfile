@@ -1,11 +1,10 @@
 FROM richarvey/nginx-php-fpm:3.1.6
 
-# Install Node.js and npm
+# Install dependencies for Node.js
 RUN apt-get update && \
-    apt-get install -y curl gnupg && \
+    apt-get install -y curl gnupg2 && \
     curl -sL https://deb.nodesource.com/setup_16.x | bash - && \
-    apt-get install -y nodejs && \
-    npm install -g npm@latest
+    apt-get install -y nodejs
 
 # Set working directory
 WORKDIR /var/www/html
