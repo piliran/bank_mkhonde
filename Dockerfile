@@ -1,46 +1,20 @@
-# First stage: Build assets using Node.js and Vite
-FROM node:16 AS build
-
-# Set the working directory to /var/www/html
-WORKDIR /var/www/html
-
-# Copy package.json and package-lock.json to the working directory
-COPY package.json package-lock.json ./
-
-# Install Node.js dependencies
-RUN npm install
-
-# Copy the rest of the application files
-COPY . .
-
-# Run npm build with verbose output for debugging
-RUN npm run build --verbose
-
-# Second stage: Use the richarvey/nginx-php-fpm image
 FROM richarvey/nginx-php-fpm:3.1.6
 
-# Set environment variables
+COPY . .
+
+# Image config
 ENV SKIP_COMPOSER 1
 ENV WEBROOT /var/www/html/public
 ENV PHP_ERRORS_STDERR 1
 ENV RUN_SCRIPTS 1
 ENV REAL_IP_HEADER 1
+
+# Laravel config
 ENV APP_ENV production
 ENV APP_DEBUG false
 ENV LOG_CHANNEL stderr
+
+# Allow composer to run as root
 ENV COMPOSER_ALLOW_SUPERUSER 1
 
-# Copy built assets from the build stage
-COPY --from=build /var/www/html/public/build /var/www/html/public/build
-
-# Copy the rest of the application files
-COPY . /var/www/html
-
-# Run Composer install (optional)
-# RUN composer install --optimize-autoloader --no-dev
-
-# Expose the necessary ports
-EXPOSE 80 443
-
-# Start the server
 CMD ["/start.sh"]
