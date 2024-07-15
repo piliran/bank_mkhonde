@@ -42,46 +42,41 @@ class LoanController extends Controller
 
     public function store(Request $request)
     {
-       try {
-        if (Borrower::where('user_id', Auth::user()->id)->exists()) {
-            $borrower = Borrower::where('user_id', Auth::user()->id)->firstOrFail();
-            return Loan::create([
-                'lender_id' => $request->lender_id,
-                'borrower_id' =>$borrower->id,
-                'amount' => $request->amount,
-                'repay_amount' => $request->repay_amount,
-                'interest_rate' => 30,
-                'borrowed_at' =>  now(),
-
-                'due_at' => now()->addDays(30),
-            ]);
-       return response()->json(['message' => 'Loan request sent successfully'], 200);
-
-           
-        } else {
-           $borrower= Borrower::create([
-                'user_id' => Auth::user()->id,
-            ]);
-            return Loan::create([
-                'lender_id' => $request->lender_id,
-                'borrower_id' =>$borrower->id,
-                'amount' => $request->amount,
-                'repay_amount' => $request->repay_amount,
-
-                'interest_rate' => 30,
-                'due_at' => now()->addDays(30),
-            ]);
-        return response()->json(['message' => 'Loan request sent successfully'], 200);
-
+        try {
+            // Check if the user is authenticated
+            if (Auth::check()) {
+                // Check if a Borrower record exists for the authenticated user
+                if (Borrower::where('user_id', Auth::user()->id)->exists()) {
+                    $borrower = Borrower::where('user_id', Auth::user()->id)->firstOrFail();
+                } else {
+                    // Create a new Borrower record for the authenticated user
+                    $borrower = Borrower::create([
+                        'user_id' => Auth::user()->id,
+                    ]);
+                }
+    
+                // Create a new Loan record using borrower_id
+                $loan = Loan::create([
+                    'lender_id' => $request->lender_id,
+                    'borrower_id' => $borrower->id,
+                    'amount' => $request->amount,
+                    'repay_amount' => $request->repay_amount,
+                    'interest_rate' => 30,
+                    'borrowed_at' => now(),
+                    'due_at' => now()->addDays(30),
+                ]);
+    
+                return response()->json(['message' => 'Loan request sent successfully'], 200);
+            } else {
+                // Handle case where user is not authenticated
+                return response()->json(['error' => 'User is not authenticated'], 401);
+            }
+        } catch (\Throwable $th) {
+            // Handle any unexpected errors
+            return response()->json(['error' => 'Failed to process loan request'], 500);
         }
-       } catch (\Throwable $th) {
-        throw $th;
-       }
-
-      
-       
-
     }
+    
 
     public function show($id)
     {
