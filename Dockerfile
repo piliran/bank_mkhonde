@@ -13,8 +13,8 @@ RUN npm install
 # Copy the rest of the application files
 COPY . .
 
-# Build the assets using Vite
-RUN npm run build
+# Run npm build with verbose output for debugging
+RUN npm run build --verbose
 
 # Second stage: Use the richarvey/nginx-php-fpm image
 FROM richarvey/nginx-php-fpm:3.1.6
