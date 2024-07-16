@@ -9,6 +9,7 @@ use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\UsersController;
 
 
+Route::apiResource('transactions', TransactionController::class);
 
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
@@ -19,7 +20,6 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::apiResource('loans', LoanController::class);
 
 Route::apiResource('borrowers', BorrowerController::class);
-Route::apiResource('transactions', TransactionController::class);
     Route::post('/logout', [UsersController::class, 'logout']);   
     Route::get('/getWallet', [LenderController::class, 'getWallet']);   
     Route::get('/getMyLoanRequests', [LoanController::class, 'getMyLoanRequests']);   
