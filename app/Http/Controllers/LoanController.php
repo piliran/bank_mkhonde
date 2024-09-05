@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Loan;
+use App\Models\Lender;
+
 use Illuminate\Http\Request;
 use App\Models\Borrower;
 use Illuminate\Support\Facades\Auth;
@@ -99,10 +101,14 @@ class LoanController extends Controller
     public function approveLoan(Request $request)
 {
     try {
-        // Attempt to find the loan by ID
+       
         $loan = Loan::findOrFail($request->id);
+        $lender= Lender::findOrFail($loan->lender_id);
 
-        // Update the loan status to 'approved'
+        $lender->update([
+            'balance' => $lender->balance-$loan->amount,
+        ]);
+       
         $loan->update([
             'status' => 'approved',
         ]);
