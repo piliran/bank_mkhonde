@@ -5,12 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class AccountType extends Model
+class Notification extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'user_id',  // Add this
-        'type',     // Assuming this is another field you need to mass-assign
+        'recipient_id',
+        'message',
     ];
 }

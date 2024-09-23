@@ -1,157 +1,147 @@
 <?php
-
 namespace App\Http\Controllers;
 
 use App\Models\Loan;
-use App\Models\Lender;
-
+use App\Models\Notification;
 use Illuminate\Http\Request;
-use App\Models\Borrower;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Resources\LoanResource;
+use Illuminate\Http\JsonResponse;
+
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Broadcast;
+use App\Events\LoanCleared;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+
 
 
 
 class LoanController extends Controller
 {
-    public function index()
+   
+    public function index(): JsonResponse
     {
-        return Loan::with(['lender.user', 'borrower.user'])->get();
+        $user = Auth::user();
+        // $loans = Loan::where('borrower_id', $user->id)
+        //     ->orWhere('lender_id', $user->id)
+        //     ->get();
+
+        // return response()->json($loans, 200);
+        $Loans = Loan::with(['borrower', 'lender', 'collateral'])->where('borrower_id', $user->id)
+        ->orWhere('lender_id', $user->id)
+        ->get();
+
+        return response()->json(LoanResource::collection($Loans), 200);
+
+
+        // return LoanResource::collection($Loans);
     }
+  
 
-    public function getMyLoanRequests()
+
+
+
+    
+
+
+     public function squareLoan(Request $request, $loan_id)
     {
-     
-       
-            $authUserId= Auth::user()->id;
-          return  Loan::with(['lender.user', 'borrower.user'])
-            ->whereHas('borrower', function($query) use ($authUserId) {
-                $query->where('user_id', '=', $authUserId);
-            })
-            ->get();
-    }
+        DB::beginTransaction();
 
-    public function getClientLoanRequests()
-    {
-      
-        $authUserId= Auth::user()->id;
-        return  Loan::with(['lender.user', 'borrower.user'])
-          ->whereHas('lender', function($query) use ($authUserId) {
-              $query->where('user_id', '=', $authUserId);
-          })
-          ->get();
-    }
-
-
-    public function store(Request $request)
-    {
         try {
-            // Check if the user is authenticated
-            if (Auth::check()) {
-                // Check if a Borrower record exists for the authenticated user
-                if (Borrower::where('user_id', Auth::user()->id)->exists()) {
-                    $borrower = Borrower::where('user_id', Auth::user()->id)->firstOrFail();
-                } else {
-                    // Create a new Borrower record for the authenticated user
-                    $borrower = Borrower::create([
-                        'user_id' => Auth::user()->id,
-                    ]);
-                }
-    
-                // Create a new Loan record using borrower_id
-                $loan = Loan::create([
-                    'lender_id' => $request->lender_id,
-                    'borrower_id' => $borrower->id,
-                    'amount' => $request->amount,
-                    'repay_amount' => $request->repay_amount,
-                    'interest_rate' => 30,
-                    'borrowed_at' => now(),
-                    'due_at' => now()->addDays(30),
-                ]);
-    
-                return response()->json(['message' => 'Loan request sent successfully'], 200);
-            } else {
-                // Handle case where user is not authenticated
-                return response()->json(['error' => 'User is not authenticated'], 401);
+            // Fetch the loan
+            $loan = Loan::findOrFail($loan_id);
+
+            // Authorization check
+            if ($loan->lender_id != auth()->user()->id) {
+                return response()->json(['error' => 'You are not authorized to square this loan.'], 403);
             }
-        } catch (\Throwable $th) {
-            // Handle any unexpected errors
-            return response()->json(['error' => 'Failed to process loan request'], 500);
-        }
-    }
-    
 
-    public function show($id)
-    {
-        return Loan::with(['lender.user', 'borrower.user'])->findOrFail($id);
-    }
+            // Check loan status
+            if ($loan->status != 'active') {
+                return response()->json(['error' => 'Cannot clear a loan that is ' . $loan->status . '.'], 400);
+            }
 
-    public function update(Request $request, $id)
-    {
-        $loan = Loan::findOrFail($id);
+            // Update loan status to 'paid'
+            $loan->status = 'paid';
+            $loan->date_repaid = now();
+            $loan->save();
 
-        $validated = $request->validate([
-            'returned_at' => 'nullable|date',
-        ]);
+            // Update collateral status if it exists
+            if ($loan->collateral) {
+                $collateral = $loan->collateral;
+                $collateral->status = 'available';
+                $collateral->save();
+            }
 
-        $loan->update($validated);
+            // Send push notification if the borrower has an Expo token
+            if ($loan->borrower->expo_push_token) {
+                $this->sendPushNotification(
+                    $loan->borrower->expo_push_token,
+                    'Loan request response.',
+                    'Your loan of MWK ' . $loan->repayment_amount . ' has been cleared by ' . $loan->lender->company_name
+                );
+            } else {
+                Log::info('Borrower has no Expo push token.');
+            }
 
-        return $loan;
-    }
-
-    public function approveLoan(Request $request)
-{
-    try {
-       
-        $loan = Loan::findOrFail($request->id);
-        $lender= Lender::findOrFail($loan->lender_id);
-
-        $lender->update([
-            'balance' => $lender->balance-$loan->amount,
-        ]);
-       
-        $loan->update([
-            'status' => 'approved',
-        ]);
-
-        // Return the updated loan
-        return response()->json($loan, 200);
-    } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-        // If the loan is not found, return a 404 error
-        return response()->json(['error' => 'Loan not found'], 404);
-    } catch (\Exception $e) {
-        // If any other error occurs, return a 500 error
-        return response()->json(['error' => 'An error occurred while approving the loan'], 500);
-    }
-}
-
-
-    public function rejectLoan(Request $request)
-    {
-        try {
-            // Attempt to find the loan by ID
-            $loan = Loan::findOrFail($request->id);
-    
-            // Update the loan status to 'approved'
-            $loan->update([
-                'status' => 'rejected',
+            // Create notification for the borrower
+            Notification::create([
+                'recipient_id' => $loan->borrower_id,
+                'message' => 'Your loan of MWK ' . $loan->repayment_amount . ' has been cleared by ' . $loan->lender->company_name
             ]);
-    
-            // Return the updated loan
-            return response()->json($loan, 200);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            // If the loan is not found, return a 404 error
-            return response()->json(['error' => 'Loan not found'], 404);
-        } catch (\Exception $e) {
-            // If any other error occurs, return a 500 error
-            return response()->json(['error' => 'An error occurred while approving the loan'], 500);
+
+            // Send WebSocket notification
+            $this->sendWebSocketNotification($loan->borrower_id, 'Your loan of MWK ' . $loan->repayment_amount . ' has been cleared by ' . $loan->lender->company_name);
+
+            // Commit transaction if everything went well
+            DB::commit();
+
+            return response()->json(['message' => 'Loan cleared successfully and borrower notified.'], 200);
+
+        } catch (Exception $e) {
+            // Rollback transaction if any exception occurs
+            DB::rollBack();
+            Log::error('Error clearing loan: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to clear loan.'], 500);
         }
     }
 
-    public function destroy($id)
+    public function sendPushNotification($expoPushToken, $title, $body)
     {
-        $loan = Loan::findOrFail($id);
-        $loan->delete();
+        $message = [
+            'to' => $expoPushToken,
+            'sound' => 'default',
+            'title' => $title,
+            'body' => $body,
+            'data' => ['extra_data' => 'optional_data'],
+        ];
 
-        return response()->noContent();
+        try {
+            $response = Http::withHeaders([
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/json',
+            ])->post('https://exp.host/--/api/v2/push/send', $message);
+
+            if ($response->failed()) {
+                \Log::error('Error sending push notification: ' . $response->body());
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to send push notification: ' . $e->getMessage());
+        }
     }
+
+    private function sendWebSocketNotification($borrowerId, $message)
+    {
+       
+        try {
+            broadcast(new LoanCleared($borrowerId, $message));
+        } catch (\Exception $e) {
+            Log::error('WebSocket notification error', ['error' => $e->getMessage()]);
+        }
+    }
+
+
+
 }

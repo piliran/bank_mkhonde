@@ -5,14 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Loan extends Model
+class LoanRequest extends Model
 {
     use HasFactory;
 
     protected $fillable = [
         'borrower_id', 'lender_id', 'amount', 'repayment_amount', 
-        'interest_rate', 'repayment_period', 'repayment_due_date', 
-        'collateral_id', 'status', 'date_granted', 'actual_amount_loaned'
+        'repayment_period', 'interest_rate', 'collateral_id', 'status', 'created_at'
     ];
 
     public function borrower()

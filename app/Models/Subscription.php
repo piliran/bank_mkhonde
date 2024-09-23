@@ -5,15 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Loan extends Model
+class Subscription extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'borrower_id', 'lender_id', 'amount', 'repayment_amount', 
-        'interest_rate', 'repayment_period', 'repayment_due_date', 
-        'collateral_id', 'status', 'date_granted', 'actual_amount_loaned'
+        'lender_id',  // Add this
+        'borrower_id',     // Assuming this is another field you need to mass-assign
     ];
+
 
     public function borrower()
     {
@@ -23,10 +23,5 @@ class Loan extends Model
     public function lender()
     {
         return $this->belongsTo(User::class, 'lender_id');
-    }
-
-    public function collateral()
-    {
-        return $this->belongsTo(Collateral::class);
     }
 }

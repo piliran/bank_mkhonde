@@ -1,35 +1,62 @@
 <?php
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AuthController;
 use App\Http\Controllers\LenderController;
-use App\Http\Controllers\BorrowerController;
 use App\Http\Controllers\LoanController;
-use App\Http\Controllers\TransactionController;
-use App\Http\Controllers\UsersController;
+use App\Http\Controllers\CollateralController;
+use App\Http\Controllers\LoanRequestController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\SubscriptionController;  // Make sure to import this
+use App\Http\Controllers\UserController;  // Make sure to import this
 
+// Public routes
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login', [AuthController::class, 'login']);
 
-Route::apiResource('transactions', TransactionController::class);
-
-
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
+Route::middleware('auth:sanctum')->post('/broadcasting/auth', function () {
+    return [];
 });
 
+// Protected routes
 Route::middleware('auth:sanctum')->group(function () {
-Route::apiResource('loans', LoanController::class);
+    Route::post('/logout', [AuthController::class, 'logout']);
 
-Route::apiResource('borrowers', BorrowerController::class);
-    Route::post('/logout', [UsersController::class, 'logout']);   
-    Route::get('/getWallet', [LenderController::class, 'getWallet']);   
-    Route::get('/getMyLoanRequests', [LoanController::class, 'getMyLoanRequests']);   
-Route::post('/rejectLoan', [LoanController::class, 'rejectLoan']);
-Route::post('/approveLoan', [LoanController::class, 'approveLoan']);
+    // Lenders
+    Route::get('/lenders', [LenderController::class, 'index']);    
 
-    Route::get('/getClientLoanRequests', [LoanController::class, 'getClientLoanRequests']);   
-    Route::apiResource('lenders', LenderController::class);
+    // Collaterals
+    Route::post('/collateral', [CollateralController::class, 'upload']);
+    Route::get('/collaterals', [CollateralController::class, 'index']);
+    Route::get('/collaterals/available', [CollateralController::class, 'available']);    
 
+    // Loan Requests
+    Route::get('/loan-requests', [LoanRequestController::class, 'index']);
+    Route::post('/loan-requests', [LoanRequestController::class, 'store']);
+    Route::post('/loan-requests/{id}/accept', [LoanRequestController::class, 'accept']);    
+    Route::post('/loan-requests/{id}/reject', [LoanRequestController::class, 'reject']);    
+    Route::post('/loan-requests/{id}/withdraw', [LoanRequestController::class, 'withdraw']);
+
+    // Notifications
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markNotificationAsRead']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadNotificationsCount']);
+
+    // Subscriptions
+    Route::post('/subscribe', [SubscriptionController::class, 'subscribe']);
+    Route::get('/subscribe', [SubscriptionController::class, 'subscription']);
+    Route::get('/check-subscription/{id}', [SubscriptionController::class, 'checkSubscription']);
+
+    // Expo push token
+    Route::post('/save-push-token', [AuthController::class, 'saveExpoToken']);
+
+    // Loans
+    Route::get('/loans', [LoanController::class, 'index']);
+    Route::post('/loan/{id}/square', [LoanController::class, 'squareLoan']);
+
+ 
+    // Get authenticated user
+    Route::get('/user', function (Request $request) {
+        return $request->user();
     });
-Route::post('/login', [UsersController::class, 'login']);
-Route::post('/register', [UsersController::class, 'register']);
-Route::post('/users', [UsersController::class, 'users']);
+});
