@@ -10,6 +10,8 @@ use Illuminate\Broadcasting\ShouldBroadcast;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+
 
 class LoanCleared implements ShouldBroadcastNow
 {
@@ -38,7 +40,12 @@ class LoanCleared implements ShouldBroadcastNow
      */
     public function broadcastOn()
     {
-        return new PrivateChannel('user.' . $this->borrowerId);
+        // \Log::info('Broadcasting on channel: user.' . $this->borrowerId);
+
+        // return new PrivateChannel('user.' . $this->borrowerId);
+        return [
+            new Channel('user.' . $this->borrowerId),
+        ];
     }
 
     /**

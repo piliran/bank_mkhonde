@@ -13,9 +13,11 @@ use App\Events\LoanRequestCreated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use App\Events\LoanRequestApproved;
+use App\Events\LoanRequestWithdrawn;
 use App\Events\LoanRejected;
 use App\Models\Loan;
 use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 
 use Illuminate\Support\Facades\DB;
 
@@ -43,6 +45,7 @@ class LoanRequestController extends Controller
         DB::beginTransaction();
     
         try {
+         
             // Create a new LoanRequest
             $loanRequest = new LoanRequest;
             $loanRequest->borrower_id = Auth::id();
@@ -53,6 +56,7 @@ class LoanRequestController extends Controller
             $loanRequest->collateral_id = $request->collateral_id;
             $loanRequest->save();
     
+        
             // Update collateral status if it exists
             if ($loanRequest->collateral_id) {
                 $collateral = Collateral::find($loanRequest->collateral_id);
@@ -60,24 +64,47 @@ class LoanRequestController extends Controller
                 if ($collateral) {
                     $collateral->status = 'on hold'; // Update status to "on hold"
                     $collateral->save(); // Save the updated collateral
+                   
                 }
             }
     
             // Commit the transaction if all operations succeed
             DB::commit();
     
-            // Additional logic for notifications and websockets can be added here
-            // broadcast(new LoanRequestCreated($loanRequest))->toOthers();
+               // Send push notification to the lender
+        if ($loanRequest->lender->expo_push_token) {
+            $this->sendPushNotification(
+                $loanRequest->lender->expo_push_token,
+                'Loan request',
+                "{$loanRequest->borrower->first_name} {$loanRequest->borrower->last_name} wants a loan of MWK {$loanRequest->amount} ."
+            );
+        }
+
+        // Create a notification for the lender
+        Notification::create([
+            'recipient_id' => $loanRequest->lender_id,
+            'message' => "{$loanRequest->borrower->first_name} {$loanRequest->borrower->last_name} wants a loan of MWK {$loanRequest->amount} ."
+        ]);
+
+
+        
+            // Broadcast the LoanRequestCreated event
             broadcast(new LoanRequestCreated($loanRequest))->toOthers();
+    
+         
+       
+    
             return response()->json($loanRequest, 201);
     
         } catch (\Exception $e) {
             // Rollback the transaction if there is an error
             DB::rollBack();
+            Log::error('Error in store function', ['error' => $e->getMessage()]);
     
             return response()->json(['error' => 'Failed to create loan request.'], 500);
         }
     }
+    
     
     public function reject(Request $request, $requestId)
     {
@@ -126,7 +153,8 @@ class LoanRequestController extends Controller
                 'message' => "Your loan request for MWK {$loanRequest->amount} has been rejected by {$loanRequest->lender->company_name}."
             ]);
 
-            broadcast(new LoanRejected($loanRequest->borrower_id, "Your loan request for MWK {$loanRequest->amount} has been rejected by {$loanRequest->lender->company_name}."));
+            // broadcast(new LoanRejected($loanRequest->borrower_id, "Your loan request for MWK {$loanRequest->amount} has been rejected by {$loanRequest->lender->company_name}."));
+            LoanRejected::dispatch($loanRequest->borrower_id, "Your loan request for MWK {$loanRequest->amount} has been rejected by {$loanRequest->lender->company_name}.");
 
     
             return response()->json(['message' => 'Loan request rejected successfully and borrower notified.']);
@@ -142,46 +170,47 @@ class LoanRequestController extends Controller
 
 
     
+
     public function accept(Request $request, $requestId)
     {
-        // Start a database transaction
         DB::beginTransaction();
         
         try {
             // Find the loan request
             $loanRequest = LoanRequest::findOrFail($requestId);
-            
+    
             // Authorization check
             if ($loanRequest->lender_id != Auth::id()) {
                 return response()->json(['error' => 'You are not authorized to accept this loan request.'], 403);
             }
-            
+    
+            // Ensure loan request is still pending
             if ($loanRequest->status != 'pending') {
                 return response()->json(['error' => "Cannot accept a loan request that is {$loanRequest->status}."], 400);
             }
-            
+    
             // Validate repayment amount
             $repaymentAmount = $request->repayment_amount;
             if (!$repaymentAmount) {
                 return response()->json(['error' => 'Repayment amount is required.'], 400);
             }
     
-            // Validate repayment amount format
+            // Ensure repayment amount is numeric
             if (!is_numeric($repaymentAmount)) {
                 return response()->json(['error' => 'Invalid repayment amount format.'], 400);
             }
     
-            // Mark the loan request as approved
+            // Mark loan request as approved
             $loanRequest->status = 'approved';
             $loanRequest->save();
     
-            // Update collateral status if it exists
+            // Update collateral status if collateral exists
             if ($loanRequest->collateral) {
                 $loanRequest->collateral->status = 'seized';
                 $loanRequest->collateral->save();
             }
     
-            // Create a Loan entry
+            // Create a Loan instance
             $loan = new Loan();
             $loan->borrower_id = $loanRequest->borrower_id;
             $loan->lender_id = Auth::id();
@@ -191,11 +220,18 @@ class LoanRequestController extends Controller
             $loan->collateral_id = $loanRequest->collateral_id;
             $loan->actual_amount_loaned = $loanRequest->amount;
             $loan->repayment_amount = $repaymentAmount;
+    
+            // Calculate the repayment due date based on the repayment period
+            $currentDate = Carbon::now(); // Current date (loan granted date)
+            // $repaymentDueDate = $currentDate->copy()->addMonths($loanRequest->repayment_period);
+            $repaymentDueDate = $currentDate->copy()->addMonths((int) $loanRequest->repayment_period);
 
-            // Save the Loan instance to the database
+            $loan->repayment_due_date = $repaymentDueDate; // Save the repayment due date
+    
+            // Save the loan instance
             $loan->save();
     
-            // Send push notification to the borrower if token exists
+            // Send push notification to the borrower
             if ($loanRequest->borrower->expo_push_token) {
                 $this->sendPushNotification(
                     $loanRequest->borrower->expo_push_token,
@@ -204,13 +240,13 @@ class LoanRequestController extends Controller
                 );
             }
     
-            // Create a notification for the borrower
+            // Create notification for borrower
             Notification::create([
                 'recipient_id' => $loanRequest->borrower_id,
                 'message' => "Your loan request for MWK {$loanRequest->amount} has been approved by {$loanRequest->lender->company_name}."
             ]);
     
-            // Send WebSocket notification (implement this in a similar way as the Django method)
+            // Send WebSocket notification
             $this->sendWebSocketNotification($loanRequest->borrower_id, "Your loan request for MWK {$loanRequest->amount} has been approved by {$loanRequest->lender->company_name}.");
     
             // Commit the transaction
@@ -218,16 +254,100 @@ class LoanRequestController extends Controller
     
             return response()->json(['message' => 'Loan request approved successfully and borrower notified.'], 200);
         } catch (\Exception $e) {
-            // Rollback the transaction in case of error
+            // Rollback transaction on error
             DB::rollback();
             return response()->json(['error' => 'An error occurred while accepting the loan request: ' . $e->getMessage()], 500);
         }
     }
     
+    
+
+
+//     public function accept(Request $request, $requestId)
+// {
+//     // Start a database transaction
+//     DB::beginTransaction();
+    
+//     try {
+//         // Find the loan request
+//         $loanRequest = LoanRequest::findOrFail($requestId);
+        
+//         // Authorization check
+//         if ($loanRequest->lender_id != Auth::id()) {
+//             return response()->json(['error' => 'You are not authorized to accept this loan request.'], 403);
+//         }
+        
+//         if ($loanRequest->status != 'pending') {
+//             return response()->json(['error' => "Cannot accept a loan request that is {$loanRequest->status}."], 400);
+//         }
+        
+//         // Validate interest rate and repayment period from the loan request
+//         $principal = $loanRequest->amount;
+//         $rate = $loanRequest->interest_rate; // In percentage
+//         $period = $loanRequest->repayment_period; // In months or as applicable
+
+//         // Calculate the repayment amount using compound interest formula
+//         $repaymentAmount = $principal * pow(1 + $rate / 100, $period);
+
+//         // Mark the loan request as approved
+//         $loanRequest->status = 'approved';
+//         $loanRequest->save();
+
+//         // Update collateral status if it exists
+//         if ($loanRequest->collateral) {
+//             $loanRequest->collateral->status = 'seized';
+//             $loanRequest->collateral->save();
+//         }
+
+//         // Create a Loan entry
+//         $loan = new Loan();
+//         $loan->borrower_id = $loanRequest->borrower_id;
+//         $loan->lender_id = Auth::id();
+//         $loan->amount = $loanRequest->amount;
+//         $loan->interest_rate = $loanRequest->interest_rate;
+//         $loan->repayment_period = $loanRequest->repayment_period;
+//         $loan->collateral_id = $loanRequest->collateral_id;
+//         $loan->actual_amount_loaned = $loanRequest->amount;
+//         $loan->repayment_amount = number_format($repaymentAmount, 2, '.', ''); // Format repayment amount to 2 decimal places
+
+//         // Save the Loan instance to the database
+//         $loan->save();
+
+//         // Send push notification to the borrower if token exists
+//         if ($loanRequest->borrower->expo_push_token) {
+//             $this->sendPushNotification(
+//                 $loanRequest->borrower->expo_push_token,
+//                 'Loan request approved.',
+//                 "Your loan request for MWK {$loanRequest->amount} has been approved by {$loanRequest->lender->company_name}."
+//             );
+//         }
+
+//         // Create a notification for the borrower
+//         Notification::create([
+//             'recipient_id' => $loanRequest->borrower_id,
+//             'message' => "Your loan request for MWK {$loanRequest->amount} has been approved by {$loanRequest->lender->company_name}."
+//         ]);
+
+//         // Send WebSocket notification
+//         $this->sendWebSocketNotification($loanRequest->borrower_id, "Your loan request for MWK {$loanRequest->amount} has been approved by {$loanRequest->lender->company_name}.");
+
+//         // Commit the transaction
+//         DB::commit();
+
+//         return response()->json(['message' => 'Loan request approved successfully and borrower notified.'], 200);
+//     } catch (\Exception $e) {
+//         // Rollback the transaction in case of error
+//         DB::rollback();
+//         return response()->json(['error' => 'An error occurred while accepting the loan request: ' . $e->getMessage()], 500);
+//     }
+// }
+
     private function sendWebSocketNotification($borrowerId, $message)
     {
         try {
             broadcast(new LoanRequestApproved($borrowerId, $message));
+            // LoanRequestApproved::dispatch($borrowerId, $message);
+
         } catch (\Exception $e) {
             Log::error('WebSocket notification error', ['error' => $e->getMessage()]);
         }
@@ -268,6 +388,13 @@ class LoanRequestController extends Controller
                 "{$loanRequest->borrower->first_name} {$loanRequest->borrower->last_name} has withdrawn the loan request."
             );
         }
+
+        LoanRequestWithdrawn::dispatch($loanRequest->lender_id, "{$loanRequest->borrower->first_name} {$loanRequest->borrower->last_name} has withdrawn the loan request.");
+
+    
+        // broadcast(new LoanRequestWithdrawn($loanRequest->lender->id,'Loan request withdrawn'))->toOthers();
+
+        // broadcast(new LoanRequestWithdrawn($loanRequest))->toOthers();
 
         // Create a notification for the lender
         Notification::create([

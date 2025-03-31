@@ -10,6 +10,8 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+
 
 class LoanRequestCreated implements ShouldBroadcast
 {
@@ -34,8 +36,13 @@ class LoanRequestCreated implements ShouldBroadcast
      */
     public function broadcastOn()
     {
+       
         // Broadcasting to the lender's private channel
-        return new PrivateChannel('user.' . $this->loanRequest->lender_id);
+        // return new PrivateChannel('user.' . $this->loanRequest->lender_id);
+
+        return [
+            new Channel('user.' . $this->loanRequest->lender_id),
+        ];
     }
 
     /**

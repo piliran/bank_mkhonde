@@ -37,6 +37,22 @@ class LoanController extends Controller
 
         // return LoanResource::collection($Loans);
     }
+
+    public function seizedCollateral(): JsonResponse
+    {
+        $user = Auth::user();
+
+        // Retrieve loans with status 'approved' and collaterals with status 'seized'
+        $loans = Loan::with(['borrower', 'collateral'])
+            ->where('lender_id', $user->id)
+            ->whereHas('collateral', function($query) {
+                $query->where('status', 'seized'); 
+            })
+            ->get();
+
+        return response()->json($loans, 200);
+    }
+
   
 
 

@@ -12,31 +12,33 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
 
-class LoanRejected  implements ShouldBroadcast
+class LoanRequestWithdrawn implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $borrowerId;
+    public $lenderId;
     public $message;
+    
 
-    public function __construct($borrowerId, $message)
+    public function __construct($lenderId, $message)
     {
-        $this->borrowerId = $borrowerId;
+        $this->lenderId = $lenderId;
         $this->message = $message;
     }
 
     public function broadcastOn()
     {
-        // \Log::info('Broadcasting on channel: user.' . $this->borrowerId);
+        // \Log::info('Broadcasting on channel: user.' . $this->lenderId);
 
-        // return new PrivateChannel("user.{$this->borrowerId}");
+        // return new PrivateChannel("user.{$this->lenderId}");
+       
         return [
-            new Channel('user.' . $this->borrowerId),
+            new Channel('user.' . $this->lenderId),
         ];
     }
 
     public function broadcastAs()
     {
-        return 'loan.request.rejected';
+        return 'loan.request.withdrawn';
     }
 }

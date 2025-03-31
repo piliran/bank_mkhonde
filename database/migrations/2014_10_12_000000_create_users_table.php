@@ -52,6 +52,10 @@ return new class extends Migration
             $table->rememberToken();
             $table->foreignId('current_team_id')->nullable();
             $table->string('profile_photo_path', 2048)->nullable();
+
+            $table->boolean('is_online')->default(false); // Track online status
+            $table->timestamp('last_seen')->nullable(); // Store last seen timestamp
+
             $table->timestamps();
         });
     }

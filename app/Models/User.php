@@ -43,6 +43,9 @@ class User extends Authenticatable
         'company_annual_revenue',
         'business_registration_number',
         'expo_push_token',
+        'is_online',
+        'last_seen',
+
     ];
 
     protected $hidden = [
@@ -52,6 +55,8 @@ class User extends Authenticatable
 
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'is_online' => 'boolean',
+        'last_seen' => 'datetime',
     ];
 
       /**
@@ -63,6 +68,21 @@ class User extends Authenticatable
         'profile_photo_url',
     ];
     
+
+    // Method to update last seen time and online status
+    public function updateLastSeen()
+    {
+        $this->last_seen = now(); // Set the current timestamp
+        $this->is_online = true; // Set online status to true
+        $this->save(); // Save the changes to the database
+    }
+
+    // Optional: Method to set user as offline
+    public function setOffline()
+    {
+        $this->is_online = false; // Set online status to false
+        $this->save(); // Save the changes to the database
+    }
 
     public function accountType()
     {

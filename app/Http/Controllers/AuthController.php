@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Passport\PersonalAccessTokenResult;
 use Illuminate\Http\JsonResponse;
+use App\Events\UserOnline;
+use App\Events\UserOffline;
 
 class AuthController extends Controller
 {
@@ -51,7 +53,7 @@ class AuthController extends Controller
         $user->company_annual_revenue = $request->company_annual_revenue;
         $user->business_registration_number = $request->business_registration_number;
         $user->profile_photo_path = $request->profile_photo_path;
-        $user->terms_and_conditions = $request->terms_and_conditions ? true : false;
+        $user->terms_and_conditions = $request->terms_and_conditions;
     
         // Save the user to the database
         $user->save();
@@ -139,4 +141,170 @@ class AuthController extends Controller
 
         return response()->json(['message' => 'Expo push token saved successfully']);
     }
+
+
+    public function upload_profile_picture(Request $request): JsonResponse
+    {
+        try {
+            // Validate the request data
+            $validated = $request->validate([
+                'profile_picture' => 'required|file|mimes:jpg,jpeg,png,pdf|max:2048',
+            ]);
+    
+            // Handle file upload
+            if ($request->hasFile('profile_picture')) {
+                $file = $request->file('profile_picture');
+                $filePath = $file->store('profile-photo', 'public'); // Store in 'storage/app/public/collaterals'
+    
+                // Find user and update profile picture path
+                $user = User::findOrFail($request->user_id);
+                $user->profile_photo_path = $filePath;
+                $user->save();
+    
+                return response()->json([
+                    'message' => 'Profile picture uploaded successfully',
+                    'user' => $user,
+                ], 201);
+            }
+    
+            return response()->json(['error' => 'File upload failed'], 400);
+    
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Catch validation errors and return a JSON response
+            return response()->json([
+                'errors' => $e->errors(),  // Returns validation error details
+                'message' => 'Validation failed',
+            ], 422);  // HTTP 422 Unprocessable Entity for validation errors
+        }
+    }
+    
+
+
+    public function updatePersonalInfo(Request $request)
+    {
+        // Validate the incoming data
+       $validatedData = $request->validate([
+            'first_name' => 'nullable|string|max:255',
+            'last_name' => 'nullable|string|max:255',
+          
+            'email' => 'required|string|email|max:255|unique:users,email,' . Auth::user()->id,
+
+            'password' => 'nullable|string|min:8', 
+        'national_id' => 'nullable|string|max:50', 
+            'traditional_authority' => 'nullable|string|max:255',
+            'home_village' => 'nullable|string|max:255',
+            'occupation' => 'nullable|string|max:255',
+            'phone' => 'nullable|string|max:20',
+            'airtel_money_number' => 'nullable|string|max:20', 
+            'mpamba_number' => 'nullable|string|max:20', 
+            'home_physical_address' => 'nullable|string|max:255',
+            'current_physical_address' => 'nullable|string|max:255',
+            'physical_address' => 'nullable|string|max:255',
+            'guardian' => 'nullable|string|max:255',
+            'monthly_income' => 'nullable|string|max:20', 
+            'company_name' => 'nullable|string|max:255',
+            'lending_limit' => 'nullable|numeric|min:0', 
+            'lending_minimum' => 'nullable|numeric|min:0', 
+            'interest_rate' => 'nullable|numeric|min:0|max:100', 
+            'collateral_required' => 'nullable|boolean',
+            'preferred_borrower_criteria' => 'nullable|string|max:255',
+            'company_annual_revenue' => 'nullable|string|max:255',
+            'business_registration_number' => 'nullable|string|max:255',
+            'profile_photo_path' => 'nullable|string|max:255',
+            'terms_and_conditions' => 'nullable|string', 
+        
+        ]);
+
+
+        // Get the authenticated user
+            $user = Auth::user();
+
+            // Check if a password is provided and hash it if so
+            if (isset($validatedData['password'])) {
+                $validatedData['password'] = Hash::make($validatedData['password']);
+            } else {
+                // Remove the password key if it's not provided to avoid overwriting
+                unset($validatedData['password']);
+            }
+
+            // Update the user's personal information
+            $user->update($validatedData);
+
+            // Return the updated user information
+            return response()->json([
+                'message' => 'Personal information updated successfully',
+                'user' => $user,
+            ]);
+    }
+
+    public function getPersonalInfo(): JsonResponse
+    {
+       
+        $user = Auth::user();
+        
+
+    
+        return response()->json([
+         'user' => new UserResource($user),        
+        ], 200);
+       
+    }
+
+    public function chatActivity(Request $request)
+    {
+        $user = auth()->user(); 
+        $user->updateLastSeen(); 
+
+        return response()->json(['status' => 'success']);
+    }
+
+    public function status(Request $request,$id)
+    {
+        $user = User::find($id);
+
+        return response()->json([
+            'is_online' => $user->is_online,
+            'last_seen' => $user->last_seen,
+        ]);
+    }
+
+    public function updateLastSeen(Request $request)
+    {
+        $user = auth()->user();
+        $user->last_seen = now();
+        $user->is_online = false; 
+        $user->save();
+
+        return response()->json([
+            'is_online' => $user->is_online,
+            'last_seen' => $user->last_seen,
+        ]);
+
+    }
+
+
+
+        public function updateUserStatus(Request $request)
+        {
+            $user = Auth::user();
+            
+            if ($request->is_online) {
+                // User is online
+                broadcast(new UserOnline($user->id));
+                // Update user's status in the database as needed
+            } else {
+                // User is offline
+                $last_seen = now(); // Set last seen time
+                broadcast(new UserOffline($user->id, $last_seen));
+                // Update user's status in the database as needed
+            }
+
+            return response()->json(['status' => 'success']);
+        }
+
+
+
+
+    
+
 }

@@ -13,13 +13,13 @@ class CollateralController extends Controller
     public function upload(Request $request): JsonResponse
     {
         // Validate the request data
-        $validated = $request->validate([
-            'collateral_file' => 'required|file|mimes:jpg,jpeg,png,pdf|max:2048', // Adjust file type and size as needed
+        // $validated = $request->validate([
+        //     'collateral_file' => 'required|file|mimes:jpg,jpeg,png,pdf|max:2048', 
           
-            'name' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-            'value' => 'nullable|numeric',
-        ]);
+        //     'name' => 'nullable|string|max:255',
+        //     'description' => 'nullable|string',
+        //     'value' => 'nullable|numeric',
+        // ]);
 
         // Handle file upload
         if ($request->hasFile('collateral_file')) {
@@ -27,13 +27,22 @@ class CollateralController extends Controller
             $filePath = $file->store('collaterals', 'public'); // Store in 'storage/app/public/collaterals'
 
             // Save file details and collateral info in the database
+            // $collateral = Collateral::create([
+            //     'user_id' => Auth::user()->id,
+            //     'name' => $validated['name'],
+            //     'description' => $validated['description'],
+            //     'value' => $validated['value'],
+            //     'collateral_file' => $filePath, 
+            //     'status' => 'available',
+            // ]);
+
             $collateral = Collateral::create([
                 'user_id' => Auth::user()->id,
-                'name' => $validated['name'],
-                'description' => $validated['description'],
-                'value' => $validated['value'],
-                'collateral_file' => $filePath, // Save file path here
-                'status' => 'available', // Default status
+                'name' => $request->name,
+                'description' => $request->description,
+                'value' => $request->value,
+                'collateral_file' => $filePath, 
+                'status' => 'available',
             ]);
 
             return response()->json([
@@ -58,4 +67,6 @@ class CollateralController extends Controller
 
         return response()->json($collaterals, 200);
     }
+
+  
 }

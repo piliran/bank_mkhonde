@@ -31,12 +31,14 @@ class NewNotificationEvent implements ShouldBroadcast
      *
      * @return array<int, \Illuminate\Broadcasting\Channel>
      */
-    public function broadcastOn(): array
+    public function broadcastOn():Channel
     {
         // This channel will be listened to in the React Native app
-        return [
-            new Channel('notifications'),
-        ];
+    return new PrivateChannel('notifications');
+
+        // return [
+        //     new Channel('notifications'),
+        // ];
     }
 
     /**
