@@ -19,7 +19,7 @@ return new class extends Migration
             $table->decimal('interest_rate', 5, 2);
             $table->integer('repayment_period'); // in months
             $table->foreignId('collateral_id')->nullable()->constrained('collaterals')->onDelete('set null');
-            $table->enum('status', ['active', 'paid', 'granted', 'repaid'])->default('active');
+            $table->enum('status', ['active', 'paid', 'granted', 'repaid','partially_paid'])->default('active');
             $table->timestamp('date_granted')->useCurrent();
             $table->timestamp('repayment_due_date')->nullable();
 

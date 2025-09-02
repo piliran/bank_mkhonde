@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Http\Controllers;
 
 use App\Models\Loan;
@@ -20,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 
-class LoanController extends Controller
+class LoanControllercopy extends Controller
 {
     public function index(): JsonResponse
     {
@@ -32,32 +31,41 @@ class LoanController extends Controller
         return response()->json(LoanResource::collection($Loans), 200);
     }
 
-    // Updated method to use SeizedCollateral model
+
     public function seizedCollateral(): JsonResponse
-    {
-        $user = Auth::user();
+{
+    $user = Auth::user();
 
-        try {
-            $seizedCollaterals = SeizedCollateral::with(['collateral', 'borrower'])
-                ->where('lender_id', $user->id)
-                ->where('status', 'seized') // Use 'seized' status
-                ->get()
-                ->map(function ($seized) {
-                    return [
-                        'id' => $seized->id,
-                        'collateral' => $seized->collateral,
-                        'borrower' => $seized->borrower,
-                        'seized_at' => $seized->seized_at,
-                        'reason' => $seized->reason,
-                    ];
-                });
+    $seizedCollaterals = SeizedCollateral::with(['collateral', 'borrower'])
+        ->where('lender_id', $user->id)
+        ->where('status', 'held') // Only currently held collaterals
+        ->get()
+        ->map(function ($seized) {
+            return [
+                'id' => $seized->id,
+                'collateral' => $seized->collateral,
+                'borrower' => $seized->borrower,
+                'seized_at' => $seized->seized_at,
+                'reason' => $seized->reason,
+            ];
+        });
 
-            return response()->json($seizedCollaterals, 200);
-        } catch (\Exception $e) {
-            Log::error('Error fetching seized collaterals: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to fetch seized collaterals.'], 500);
-        }
-    }
+    return response()->json($seizedCollaterals, 200);
+}
+
+    // public function seizedCollateral(): JsonResponse
+    // {
+    //     $user = Auth::user();
+
+    //     $loans = Loan::with(['borrower', 'collateral'])
+    //         ->where('lender_id', $user->id)
+    //         ->whereHas('collateral', function($query) {
+    //             $query->where('status', 'seized'); 
+    //         })
+    //         ->get();
+
+    //     return response()->json($loans, 200);
+    // }
 
     public function repay(Request $request, $id): JsonResponse
     {
@@ -119,21 +127,21 @@ class LoanController extends Controller
 
             // Update loan repayment amount
             $loan->repayment_amount -= $amount;
-
+            
             // Check if loan is fully paid
             if ($loan->repayment_amount <= 0) {
                 $this->squareLoanAutomatically($loan);
 
-                broadcast(new LoanCleared($loan->borrower_id, "Loan has been fully paid"));
-                broadcast(new LoanCleared($loan->lender_id, "Loan has been fully paid by {$loan->borrower->first_name}"));
-
-                // Broadcast collateral updated event
-                if ($loan->collateral) {
-                    broadcast(new CollateralUpdated($loan->collateral));
-                }
+                 broadcast(new LoanCleared($loan->borrower_id, "Loan has been fully paid"));
+            broadcast(new LoanCleared($loan->lender_id, "Loan has been fully paid by {$loan->borrower->first_name}"));
+            
+            // Broadcast collateral updated event
+            if ($loan->collateral) {
+                broadcast(new CollateralUpdated($loan->collateral));
+            }
             } else {
                 $loan->save();
-                broadcast(new LoanUpdated($loan));
+                 broadcast(new LoanUpdated($loan));
             }
 
             DB::commit();
@@ -145,6 +153,7 @@ class LoanController extends Controller
                 'loan_status' => $loan->status,
                 'is_fully_paid' => $loan->repayment_amount <= 0
             ], 200);
+
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Loan repayment error: ' . $e->getMessage());
@@ -163,35 +172,11 @@ class LoanController extends Controller
         $loan->date_repaid = now();
         $loan->save();
 
-        // Update collateral status and remove from seized collaterals if it exists
+        // Update collateral status if it exists
         if ($loan->collateral) {
             $collateral = $loan->collateral;
             $collateral->status = 'available';
             $collateral->save();
-
-
-            // Remove seized collateral record instead of updating
-            $seizedCollateral = SeizedCollateral::where('collateral_id', $loan->collateral_id)
-                ->where('lender_id', $loan->lender_id)
-                ->where('status', 'seized')
-                ->first();
-
-            if ($seizedCollateral) {
-                $seizedCollateral->delete();
-            }
-
-
-            // // Remove or update seized collateral record
-            // $seizedCollateral = SeizedCollateral::where('collateral_id', $loan->collateral_id)
-            //     ->where('lender_id', $loan->lender_id)
-            //     ->where('status', 'seized')
-            //     ->first();
-
-            // if ($seizedCollateral) {
-            //     $seizedCollateral->status = 'returned';
-            //     $seizedCollateral->disposed_at = now();
-            //     $seizedCollateral->save();
-            // }
         }
 
         // Send push notification to both borrower and lender
@@ -201,14 +186,12 @@ class LoanController extends Controller
         $this->createLoanClearedNotifications($loan);
 
         // Send WebSocket notification
-        $this->sendWebSocketNotification(
-            $loan->borrower_id,
+        $this->sendWebSocketNotification($loan->borrower_id, 
             'Your loan of MWK ' . number_format($loan->amount, 2) . ' has been fully paid.'
         );
-
+        
         // Also notify lender
-        $this->sendWebSocketNotification(
-            $loan->lender_id,
+        $this->sendWebSocketNotification($loan->lender_id,
             'Loan of MWK ' . number_format($loan->amount, 2) . ' has been fully paid by ' . $loan->borrower->first_name . ' ' . $loan->borrower->last_name
         );
     }
@@ -281,6 +264,7 @@ class LoanController extends Controller
             DB::commit();
 
             return response()->json(['message' => 'Loan cleared successfully and both parties notified.'], 200);
+
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error clearing loan: ' . $e->getMessage());
