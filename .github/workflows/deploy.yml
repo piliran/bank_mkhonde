@@ -1,0 +1,47 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Add server to known hosts
+      run: |
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+    - name: Deploy to server
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+          cd ${{ secrets.DEPLOY_PATH }}
+          echo '🔄 Pulling latest changes...'
+          git pull origin main
+          echo '📦 Installing dependencies...'
+          composer install --no-dev --optimize-autoloader --no-progress
+          echo '🔧 Optimizing application...'
+          php artisan optimize:clear
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
+          echo '🗄️ Running migrations...'
+          php artisan migrate --force
+          echo '🔐 Setting permissions...'
+          chown -R apache:apache storage bootstrap/cache
+          chmod -R 775 storage bootstrap/cache
+          echo '🔄 Restarting Apache...'
+          sudo systemctl restart httpd
+          echo '✅ Deployment completed successfully!'
+        "
